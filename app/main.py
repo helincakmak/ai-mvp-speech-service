@@ -3,8 +3,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
-from tts.tts_service import TTSService
-from stt.stt_service import STTService  # ✅ EKLENDI
 import io
 
 # Logging ayarları
@@ -27,22 +25,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Servisler
+# Servisler - Global değişkenler
 tts_service = None
-stt_service = None  # ✅ EKLENDI
+stt_service = None
 
 @app.on_event("startup")
 async def startup_event():
-    global tts_service, stt_service  # ✅ Güncellendi
+    global tts_service, stt_service
     logger.info("🚀 Servis başlatılıyor...")
     
-    # TTS yükle
-    tts_service = TTSService()
-    logger.info("✅ TTS servisi hazır!")
-    
-    # STT yükle
-    stt_service = STTService(model_size="tiny")
-    logger.info("✅ STT servisi hazır!")
+    try:
+        # TTS yükle - BURADA modeller indirilecek
+        logger.info("📦 TTS servisi yükleniyor (modeller indirilecek)...")
+        from tts.tts_service import TTSService
+        tts_service = TTSService()
+        logger.info("✅ TTS servisi hazır!")
+        
+        # STT yükle - BURADA modeller indirilecek
+        logger.info("📦 STT servisi yükleniyor (modeller indirilecek)...")
+        from stt.stt_service import STTService
+        stt_service = STTService(model_size="tiny")
+        logger.info("✅ STT servisi hazır!")
+        
+    except Exception as e:
+        logger.error(f"❌ Servis başlatma hatası: {e}")
+        raise
 
 # Health check endpoint
 @app.get("/")
@@ -50,6 +57,8 @@ async def root():
     return {
         "status": "ok",
         "message": "AI-MVP Speech Service is running",
+        "tts_ready": tts_service is not None,
+        "stt_ready": stt_service is not None,
         "endpoints": {
             "tts": "/tts",
             "stt": "/stt"
@@ -63,9 +72,6 @@ async def text_to_speech(
     voice: str = "af_heart",
     speed: float = 0.9
 ):
-    """
-    Metin → Ses dönüştürme
-    """
     try:
         if not tts_service:
             raise HTTPException(status_code=503, detail="TTS servisi henüz hazır değil")
@@ -89,29 +95,19 @@ async def text_to_speech(
         logger.error(f"❌ TTS hatası: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# STT endpoint (✅ GERÇEK)
+# STT endpoint
 @app.post("/stt")
 async def speech_to_text(
     audio: UploadFile = File(...),
     language: str = "en"
 ):
-    """
-    Ses → Metin dönüştürme
-    
-    Args:
-        audio: Ses dosyası (WAV, MP3, vb.)
-        language: Dil kodu (en, tr, vb.)
-    """
     try:
         if not stt_service:
             raise HTTPException(status_code=503, detail="STT servisi henüz hazır değil")
         
         logger.info(f"🎤 STT isteği: filename={audio.filename}, language={language}")
         
-        # Audio dosyasını oku
         audio_bytes = await audio.read()
-        
-        # STT işlemi
         result = stt_service.speech_to_text(audio_bytes, language=language)
         
         return result
