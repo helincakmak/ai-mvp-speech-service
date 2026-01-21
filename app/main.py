@@ -41,7 +41,7 @@ async def startup_event():
     logger.info("✅ TTS servisi hazır!")
     
     # STT yükle
-    stt_service = STTService(model_size="base")  # ✅ EKLENDI
+    stt_service = STTService(model_size="tiny")
     logger.info("✅ STT servisi hazır!")
 
 # Health check endpoint

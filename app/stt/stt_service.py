@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class STTService:
-    def __init__(self, model_size: str = "base"):
+    def __init__(self, model_size: str = "tiny"): 
         """
         Faster-Whisper STT modelini yükle
         
