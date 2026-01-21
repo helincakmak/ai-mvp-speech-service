@@ -1,0 +1,37 @@
+# Python
+app/venv/
+app/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log
+
+# Test files - Audio
+*.wav
+*.mp3
+*.ogg
+
+# Model files - Large binaries
+*.onnx
+*.bin
+*.pth
+*.safetensors
+
+# Test scripts
+app/stt/local_*.py
+app/stt/whisper_server.py
+app/tts/kokoro_server.py
+app/tts/kokoro_test*.py
+app/tts/test.py
