@@ -6,5 +6,5 @@ python-multipart==0.0.20
 # TTS - Piper
 piper-tts==1.2.0
 
-# STT - Faster Whisper (minimal)
+# STT - Faster Whisper (tiny model için yeterli)
 faster-whisper==1.1.0

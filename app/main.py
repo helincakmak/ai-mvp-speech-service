@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # FastAPI app
 app = FastAPI(
     title="AI-MVP Speech Service",
-    description="TTS (Kokoro) ve STT (Faster-Whisper) servisi",
+    description="TTS (Piper) ve STT (Faster-Whisper) servisi",
     version="1.0.0",
 )
 
@@ -25,20 +25,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Servis referansları (modeller henüz yüklenmiyor - lazy-load)
+# Servis referansları (lazy-load)
 tts_service = None
 stt_service = None
 
 
 def get_tts_service():
     """
-    Kokoro TTS servisini lazy-load eder.
-    İlk çağrıldığında modeli yükler, sonra aynı instance'ı kullanır.
+    Piper TTS servisini lazy-load eder.
+    İlk çağrıldığında modeli indirip yükler, sonra aynı instance'ı tekrar kullanır.
     """
     global tts_service
     if tts_service is None:
-        logger.info("📦 TTS servisi ilk kez yükleniyor (lazy-load, modeller indirilecek)...")
-        from tts.tts_service import TTSService  # asıl yük TTSService içinde
+        logger.info(
+            "📦 TTS servisi ilk kez yükleniyor (lazy-load, Piper modeli indirilecek)..."
+        )
+        from tts.tts_service import TTSService
 
         tts_service = TTSService()
         logger.info("✅ TTS servisi hazır!")
@@ -52,10 +54,11 @@ def get_stt_service():
     """
     global stt_service
     if stt_service is None:
-        logger.info("📦 STT servisi ilk kez yükleniyor (lazy-load, modeller indirilecek)...")
+        logger.info(
+            "📦 STT servisi ilk kez yükleniyor (lazy-load, Whisper modeli indirilecek)..."
+        )
         from stt.stt_service import STTService
 
-        # deneme için en küçük model: tiny
         stt_service = STTService(model_size="tiny")
         logger.info("✅ STT servisi hazır!")
     return stt_service
@@ -63,8 +66,7 @@ def get_stt_service():
 
 @app.on_event("startup")
 async def startup_event():
-    # Artık burada ağır model yükleme yok,
-    # sadece servis lazy-load kullanılacağını logluyoruz.
+    # Burada ağır model yükleme yok; sadece bilgilendirme log'u.
     logger.info("🚀 Servis başlatılıyor (modeller lazy-load edilecek).")
 
 
@@ -87,17 +89,18 @@ async def root():
 @app.post("/tts")
 async def text_to_speech(
     text: str,
-    voice: str = "af_heart",
-    speed: float = 0.9,
+    voice: str = "en_US-lessac-medium",
+    speed: float = 1.0,
 ):
     try:
-        if not text or len(text.strip()) == 0:
+        text = (text or "").strip()
+        if not text:
             raise HTTPException(status_code=400, detail="Metin boş olamaz")
 
         # Lazy-load TTS (ilk istekte modeli yükler)
         service = get_tts_service()
 
-        logger.info(f"📝 TTS isteği: text='{text[:50]}...', voice={voice}, speed={speed}")
+        logger.info(f"📝 TTS isteği: text='{text[:80]}...', voice={voice}, speed={speed}")
 
         audio_bytes = service.text_to_speech(text, voice=voice, speed=speed)
 
