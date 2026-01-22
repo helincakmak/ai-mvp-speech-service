@@ -24,5 +24,5 @@ COPY app/ .
 
 EXPOSE 8000
 
-# Railway'in PORT variable'ını kullan
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Python ile PORT'u al
+CMD python -c "import os; os.system(f\"uvicorn main:app --host 0.0.0.0 --port {os.getenv('PORT', '8000')}\")"
