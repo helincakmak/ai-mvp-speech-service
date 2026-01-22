@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="AI-MVP Speech Service",
     description="TTS (Kokoro) ve STT (Faster-Whisper) servisi",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # CORS ayarları
@@ -25,31 +25,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Servisler - Global değişkenler
+# Servis referansları (modeller henüz yüklenmiyor)
 tts_service = None
 stt_service = None
 
-@app.on_event("startup")
-async def startup_event():
-    global tts_service, stt_service
-    logger.info("🚀 Servis başlatılıyor...")
-    
-    try:
-        # TTS yükle - BURADA modeller indirilecek
-        logger.info("📦 TTS servisi yükleniyor (modeller indirilecek)...")
-        from tts.tts_service import TTSService
+
+def get_tts_service():
+    """
+    Kokoro TTS servisini lazy-load eder.
+    İlk çağrıldığında modeli yükler, sonra aynı instance'ı kullanır.
+    """
+    global tts_service
+    if tts_service is None:
+        logger.info("📦 TTS servisi ilk kez yükleniyor (lazy-load, modeller indirilecek)...")
+        from tts.tts_service import TTSService  # ağır import değil, asıl yük TTSService içinde
         tts_service = TTSService()
         logger.info("✅ TTS servisi hazır!")
-        
-        # STT yükle - BURADA modeller indirilecek
-        logger.info("📦 STT servisi yükleniyor (modeller indirilecek)...")
+    return tts_service
+
+
+def get_stt_service():
+    """
+    Faster-Whisper STT servisini lazy-load eder.
+    İlk çağrıldığında modeli yükler, sonra aynı instance'ı kullanır.
+    """
+    global stt_service
+    if stt_service is None:
+        logger.info("📦 STT servisi ilk kez yükleniyor (lazy-load, modeller indirilecek)...")
         from stt.stt_service import STTService
+        # deneme için en küçük model: tiny
         stt_service = STTService(model_size="tiny")
         logger.info("✅ STT servisi hazır!")
-        
-    except Exception as e:
-        logger.error(f"❌ Servis başlatma hatası: {e}")
-        raise
+    return stt_service
+
+
+@app.on_event("startup")
+async def startup_event():
+    # Artık burada ağır model yükleme yok,
+    # sadece servis lazy-load kullanılacağını logluyoruz.
+    logger.info("🚀 Servis başlatılıyor (modeller lazy-load edilecek).")
+
 
 # Health check endpoint
 @app.get("/")
@@ -61,66 +76,73 @@ async def root():
         "stt_ready": stt_service is not None,
         "endpoints": {
             "tts": "/tts",
-            "stt": "/stt"
-        }
+            "stt": "/stt",
+        },
     }
+
 
 # TTS endpoint
 @app.post("/tts")
 async def text_to_speech(
     text: str,
     voice: str = "af_heart",
-    speed: float = 0.9
+    speed: float = 0.9,
 ):
     try:
-        if not tts_service:
-            raise HTTPException(status_code=503, detail="TTS servisi henüz hazır değil")
-        
         if not text or len(text.strip()) == 0:
             raise HTTPException(status_code=400, detail="Metin boş olamaz")
-        
+
+        # Lazy-load TTS (ilk istekte modeli yükler)
+        service = get_tts_service()
+
         logger.info(f"📝 TTS isteği: text='{text[:50]}...', voice={voice}, speed={speed}")
-        
-        audio_bytes = tts_service.text_to_speech(text, voice=voice, speed=speed)
-        
+
+        audio_bytes = service.text_to_speech(text, voice=voice, speed=speed)
+
         return StreamingResponse(
             io.BytesIO(audio_bytes),
             media_type="audio/wav",
             headers={
-                "Content-Disposition": f"attachment; filename=speech.wav"
-            }
+                "Content-Disposition": "attachment; filename=speech.wav",
+            },
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ TTS hatası: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # STT endpoint
 @app.post("/stt")
 async def speech_to_text(
     audio: UploadFile = File(...),
-    language: str = "en"
+    language: str = "en",
 ):
     try:
-        if not stt_service:
-            raise HTTPException(status_code=503, detail="STT servisi henüz hazır değil")
-        
+        # Lazy-load STT (ilk istekte modeli yükler)
+        service = get_stt_service()
+
         logger.info(f"🎤 STT isteği: filename={audio.filename}, language={language}")
-        
+
         audio_bytes = await audio.read()
-        result = stt_service.speech_to_text(audio_bytes, language=language)
-        
+        result = service.speech_to_text(audio_bytes, language=language)
+
         return result
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ STT hatası: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Server başlatma
+
+# Lokal geliştirme için (Railway Docker CMD kullanıyor)
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
     )
