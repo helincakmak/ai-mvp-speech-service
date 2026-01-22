@@ -1,132 +1,81 @@
 import io
 import wave
 import logging
-
-import numpy as np
-import torch
-from kokoro import KPipeline
+from piper import PiperVoice
 
 logger = logging.getLogger(__name__)
 
-SAMPLE_RATE = 24_000
-FADE_MS = 40  # fade-in/out süresi (robotik ses önleme)
-
 
 class TTSService:
-    def __init__(self) -> None:
+    def __init__(self):
         """
-        Kokoro TTS pipeline'ını yükler.
-        Railway free planda GPU olmadığı için device doğrudan 'cpu'.
-        Bu sınıf zaten main.py'de lazy-load edildiği için,
-        sadece ilk /tts isteğinde çalışacak.
+        Piper TTS modelini yükle.
+        Railway free plan için optimize edilmiş hafif model kullanıyoruz.
         """
         try:
-            logger.info("Kokoro TTS yükleniyor...")
-
-            # Railway'de GPU yok, doğrudan CPU kullanıyoruz
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            logger.info(f"Device: {device}")
-
-            self.pipeline = KPipeline(
-                lang_code="a",            # İngilizce
-                repo_id="hexgrad/Kokoro-82M",
-                device=device,
+            logger.info("🎤 Piper TTS yükleniyor...")
+            
+            # Hafif İngilizce model (en_US-lessac-medium)
+            # Model otomatik indirilecek (~50MB)
+            self.voice = PiperVoice.load(
+                model_path=None,  # Otomatik indir
+                config_path=None,
+                use_cuda=False  # Railway'de GPU yok
             )
-
-            logger.info("✅ Kokoro TTS başarıyla yüklendi!")
-
+            
+            logger.info("✅ Piper TTS başarıyla yüklendi!")
+            
         except Exception as e:
-            logger.error(f"❌ Kokoro TTS yüklenirken hata: {e}")
+            logger.error(f"❌ Piper TTS yüklenirken hata: {e}")
             raise
 
     def text_to_speech(
         self,
         text: str,
-        voice: str = "af_heart",
-        speed: float = 0.9,
+        voice: str = "en_US-lessac-medium",  # Model adı
+        speed: float = 1.0,
     ) -> bytes:
         """
-        Metni sese çevirir.
-
+        Metni sese çevir.
+        
         Args:
             text: Dönüştürülecek metin
-            voice: Ses modeli (af_heart, af_sky, af_bella, am_adam vb.)
-            speed: Konuşma hızı (0.5–2.0 arası, varsayılan 0.9)
-
+            voice: Ses modeli (şimdilik sabit)
+            speed: Konuşma hızı (0.5-2.0)
+        
         Returns:
             WAV formatında ses verisi (bytes)
         """
         try:
             if not text or not text.strip():
-                raise ValueError("Metin boş olamaz.")
+                raise ValueError("Metin boş olamaz")
 
-            logger.info(f"🎤 TTS işlemi başlıyor: '{text[:50]}...'")
-            logger.info(f"Voice: {voice}, Speed: {speed}")
+            logger.info(f"🎤 Piper TTS: '{text[:50]}...'")
+            logger.info(f"Speed: {speed}")
 
-            # Kokoro ile ses üret
-            gen = self.pipeline(
-                text,
-                voice=voice,
-                speed=speed,
-            )
-
-            # Tüm chunk'ları birleştir
-            audio_chunks = []
-            for _, _, audio in gen:
-                audio_chunks.append(np.asarray(audio, dtype=np.float32))
-
-            if not audio_chunks:
-                raise ValueError("Ses üretilemedi!")
-
-            # Chunk'ları tek array'e birleştir
-            audio = np.concatenate(audio_chunks)
-
-            # Fade-in/out uygula (robotik hissi azaltır)
-            audio = self._apply_fade(audio)
-
-            # WAV bytes'a çevir
-            audio_bytes = self._numpy_to_wav(audio, SAMPLE_RATE)
-
-            audio_duration = len(audio) / SAMPLE_RATE
-            logger.info(
-                f"✅ TTS başarılı! Ses boyutu: {len(audio_bytes)} bytes, "
-                f"Süre: {audio_duration:.2f}s"
-            )
-
-            return audio_bytes
+            # Piper ile ses üret
+            audio_stream = io.BytesIO()
+            
+            # Synthesize
+            with wave.open(audio_stream, "wb") as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(22050)  # Piper default
+                
+                # Generate audio
+                for audio_bytes in self.voice.synthesize_stream_raw(
+                    text,
+                    length_scale=1.0/speed  # Piper'da speed tersten çalışır
+                ):
+                    wav_file.writeframes(audio_bytes)
+            
+            # Get bytes
+            audio_stream.seek(0)
+            result = audio_stream.getvalue()
+            
+            logger.info(f"✅ TTS başarılı! Boyut: {len(result)} bytes")
+            return result
 
         except Exception as e:
             logger.error(f"❌ TTS hatası: {e}")
             raise
-
-    def _apply_fade(self, audio: np.ndarray) -> np.ndarray:
-        """
-        Başına ve sonuna fade-in/out uygular (sert giriş/çıkışı yumuşatır).
-        """
-        audio = audio.astype(np.float32)
-        n = int(SAMPLE_RATE * FADE_MS / 1000)
-        n = max(1, min(n, len(audio) // 2))
-
-        fade_in = np.linspace(0.0, 1.0, n, dtype=np.float32)
-        fade_out = fade_in[::-1]
-
-        audio[:n] *= fade_in
-        audio[-n:] *= fade_out
-        return audio
-
-    def _numpy_to_wav(self, samples: np.ndarray, sample_rate: int) -> bytes:
-        """
-        NumPy array'i WAV bytes'a çevirir.
-        """
-        # Float32'den Int16'ya çevir
-        audio_int16 = (samples * 32767).astype(np.int16)
-
-        # WAV dosyasını memory'de oluştur
-        wav_io = io.BytesIO()
-        with wave.open(wav_io, "wb") as wav_file:
-            wav_file.setnchannels(1)   # Mono
-            wav_file.setsampwidth(2)   # 16-bit
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(audio_int16.tobytes())
-
-        return wav_io.getvalue()

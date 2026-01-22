@@ -8,16 +8,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Çalışma dizini
 WORKDIR /app
 
-# Sistem paketleri (ffmpeg gerekiyor)
+# Sistem paketleri (ffmpeg + espeak-ng gerekiyor)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 # Python bağımlılıkları
 COPY app/requirements.txt .
 
+# Torch KALDIRILDI - Piper için gerekli değil
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir "torch==2.2.0" --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r requirements.txt \
     && rm -rf /root/.cache/pip
 
