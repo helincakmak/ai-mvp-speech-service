@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
@@ -25,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Servis referansları (modeller henüz yüklenmiyor)
+# Servis referansları (modeller henüz yüklenmiyor - lazy-load)
 tts_service = None
 stt_service = None
 
@@ -38,7 +38,8 @@ def get_tts_service():
     global tts_service
     if tts_service is None:
         logger.info("📦 TTS servisi ilk kez yükleniyor (lazy-load, modeller indirilecek)...")
-        from tts.tts_service import TTSService  # ağır import değil, asıl yük TTSService içinde
+        from tts.tts_service import TTSService  # asıl yük TTSService içinde
+
         tts_service = TTSService()
         logger.info("✅ TTS servisi hazır!")
     return tts_service
@@ -53,6 +54,7 @@ def get_stt_service():
     if stt_service is None:
         logger.info("📦 STT servisi ilk kez yükleniyor (lazy-load, modeller indirilecek)...")
         from stt.stt_service import STTService
+
         # deneme için en küçük model: tiny
         stt_service = STTService(model_size="tiny")
         logger.info("✅ STT servisi hazır!")
